@@ -301,7 +301,6 @@ def main():
         left_col.metric("Probability of leaving", f"{p_leave:.1%}")
         right_col.metric("Probability of staying", f"{p_stay:.1%}")
         st.progress(min(max(p_leave, 0.0), 1.0), text=f"Attrition risk: {p_leave:.1%}")
-        st.caption("The predicted class uses the model's standard 50% threshold.")
 
     contributions = explain_prediction(pipeline, row)
 main()
