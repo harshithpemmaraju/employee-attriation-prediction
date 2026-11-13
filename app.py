@@ -15,10 +15,6 @@ import streamlit as st
 
 MODEL_PATH = Path(__file__).resolve().parent / "model.pkl"
 
-
-# ---------------------------------------------------------------------------
-# 1. SETTINGS: which input fields appear in which tab, and their help texts
-# ---------------------------------------------------------------------------
 FIELD_GROUPS = {
     " Personal": ["Age", "Gender", "MaritalStatus", "Education", "DistanceFromHome"],
     " Job": ["Department", "JobRole", "JobLevel", "BusinessTravel", "OverTime", "PercentRemoteWork"],
@@ -54,23 +50,16 @@ HELP_TEXT = {
 }
 
 
-# ---------------------------------------------------------------------------
-# 2. SMALL HELPER: make column names readable
-# ---------------------------------------------------------------------------
 def pretty(name):
     """Turn 'YearsAtCompany' into 'Years At Company'."""
     result = ""
     for i, letter in enumerate(name):
-        # add a space before a capital letter that follows a non-capital letter
         if i > 0 and letter.isupper() and not name[i - 1].isupper():
             result += " "
         result += letter
     return result
 
 
-# ---------------------------------------------------------------------------
-# 3. LOAD THE SAVED MODEL
-# ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner="Loading model...")
 def load_bundle(path):
     """Read model.pkl from disk (cached so it is only loaded once)."""
@@ -79,7 +68,6 @@ def load_bundle(path):
 
 def load_model_or_stop():
     """Load model.pkl. If anything is wrong, show a friendly message and stop the app."""
-    # Problem 1: the file does not exist
     if not MODEL_PATH.exists():
         st.error(
             "**model.pkl was not found.**\n\n"
@@ -88,7 +76,6 @@ def load_model_or_stop():
         )
         st.stop()
 
-    # Problem 2: the file exists but cannot be opened
     try:
         bundle = load_bundle(str(MODEL_PATH))
     except Exception as error:
@@ -100,7 +87,6 @@ def load_model_or_stop():
         )
         st.stop()
 
-    # Problem 3: the file does not contain what this app needs
     needed_keys = ["pipeline", "feature_columns", "numeric_info", "categories"]
     if not isinstance(bundle, dict) or any(key not in bundle for key in needed_keys):
         st.error("model.pkl does not have the expected content. Please run `python train.py` again.")
@@ -109,9 +95,7 @@ def load_model_or_stop():
     return bundle
 
 
-# ---------------------------------------------------------------------------
-# 4. INPUT WIDGETS
-# ---------------------------------------------------------------------------
+
 def number_field(col, info, key):
     """Create the right widget for one numeric column (limited to the range seen in training)."""
     label = pretty(col)
@@ -120,17 +104,15 @@ def number_field(col, info, key):
     largest = info["max"]
     middle = info["median"]
 
-    # Whole numbers
+    
     if info["is_integer"]:
         smallest, largest, middle = int(smallest), int(largest), int(round(middle))
         if largest - smallest <= 10:
-            # small range (like a 1-4 rating) -> slider
+            
             return st.slider(label, smallest, largest, middle, step=1, help=help_text, key=key)
-        # big range -> number box
         return st.number_input(label, min_value=smallest, max_value=largest, value=middle,
                                step=1, help=help_text, key=key)
 
-    # Decimal numbers
     return st.number_input(label, min_value=float(smallest), max_value=float(largest),
                            value=float(round(middle, 1)), step=0.1, format="%.1f",
                            help=help_text, key=key)
@@ -140,7 +122,6 @@ def category_field(col, bundle, values):
     """Create a dropdown for one categorical column."""
     options = bundle["categories"][col]
 
-    # Job roles depend on the chosen department, so only show the roles of that department
     department_roles = bundle.get("department_roles", {})
     if col == "JobRole" and values.get("Department") in department_roles:
         options = department_roles[values["Department"]]
@@ -158,7 +139,6 @@ def get_tab_groups(feature_columns):
             groups[tab_name] = fields
             placed += fields
 
-    # Any model column that is not listed above goes into an extra "Other" tab
     leftovers = [col for col in feature_columns if col not in placed]
     if leftovers:
         groups["Other"] = leftovers
@@ -175,7 +155,6 @@ def collect_inputs(bundle):
         with tab:
             left, right = st.columns(2)
             for i, col in enumerate(groups[tab_name]):
-                # alternate between the left and right column
                 box = left if i % 2 == 0 else right
                 with box:
                     if col in bundle["numeric_info"]:
@@ -185,9 +164,6 @@ def collect_inputs(bundle):
     return values
 
 
-# ---------------------------------------------------------------------------
-# 5. CHECK THE USER'S INPUTS
-# ---------------------------------------------------------------------------
 def is_greater(values, first, second):
     """True if both fields exist and `first` is bigger than `second`."""
     return first in values and second in values and values[first] > values[second]
@@ -197,24 +173,20 @@ def validate(values, bundle):
     """Return a list of problems. An empty list means the inputs are fine."""
     problems = []
 
-    # a) every field must have a value
     for col in bundle["feature_columns"]:
         value = values.get(col)
         if value is None or (isinstance(value, str) and value.strip() == ""):
             problems.append(f"'{pretty(col)}' is missing.")
 
-    # b) numbers must be inside the range seen in training
     for col, info in bundle["numeric_info"].items():
         value = values.get(col)
         if value is not None and not (info["min"] <= value <= info["max"]):
             problems.append(f"{pretty(col)} must be between {info['min']:g} and {info['max']:g}.")
 
-    # c) categories must be known values
     for col, allowed in bundle["categories"].items():
         if values.get(col) not in allowed:
             problems.append(f"'{values.get(col)}' is not a known value for {pretty(col)}.")
 
-    # d) logical rules between fields
     if is_greater(values, "YearsAtCompany", "TotalWorkingYears"):
         problems.append("Years At Company cannot be greater than Total Working Years.")
     if is_greater(values, "YearsInCurrentRole", "YearsAtCompany"):
@@ -226,7 +198,6 @@ def validate(values, bundle):
             problems.append("Total Working Years looks too high for this Age (the data has at least 14 years "
                             "between age and years worked).")
 
-    # e) the job role must belong to the chosen department
     department_roles = bundle.get("department_roles", {})
     department = values.get("Department")
     if department in department_roles and values.get("JobRole") not in department_roles[department]:
@@ -236,12 +207,8 @@ def validate(values, bundle):
     return problems
 
 
-# ---------------------------------------------------------------------------
-# 6. EXPLAIN THE PREDICTION (works for linear models such as Logistic Regression)
-# ---------------------------------------------------------------------------
 def find_original_column(clean_name, original_columns):
     """'Department_Sales' -> 'Department', 'Age' -> 'Age'."""
-    # check longer names first so a long column name is not mistaken for a shorter one
     for col in sorted(original_columns, key=len, reverse=True):
         if clean_name == col or clean_name.startswith(col + "_"):
             return col
@@ -261,24 +228,20 @@ def explain_prediction(pipeline, row, top_n=8):
         if not hasattr(model, "coef_"):
             return None
 
-        # apply the same preprocessing as in training
         transformed = preprocessor.transform(row)
         if hasattr(transformed, "toarray"):
             transformed = transformed.toarray()
         transformed = np.asarray(transformed)
 
-        # one contribution number for every transformed column
         contributions = transformed[0] * model.coef_[0]
         names = preprocessor.get_feature_names_out()
 
-        # add up one-hot columns (Department_Sales, Department_IT, ...) into their original column
         totals = {}
         for name, value in zip(names, contributions):
-            clean_name = name.split("__", 1)[1]          # remove the "num__" / "cat__" prefix
+            clean_name = name.split("__", 1)[1]          
             owner = find_original_column(clean_name, list(row.columns))
             totals[owner] = totals.get(owner, 0.0) + float(value)
 
-        # keep the strongest influences and give them readable names
         series = pd.Series(totals)
         strongest_first = series.abs().sort_values(ascending=False).index
         series = series.reindex(strongest_first).head(top_n)
@@ -288,9 +251,7 @@ def explain_prediction(pipeline, row, top_n=8):
         return None
 
 
-# ---------------------------------------------------------------------------
-# 7. THE PAGE
-# ---------------------------------------------------------------------------
+
 def main():
     bundle = load_model_or_stop()
     pipeline = bundle["pipeline"]
@@ -301,7 +262,6 @@ def main():
         "28 employee features used to train the model. Fill in the tabs below and press **Predict**."
     )
 
-    # --- input form ---
     st.subheader("Employee details")
     values = collect_inputs(bundle)
 
@@ -309,7 +269,6 @@ def main():
     if not st.button(" Predict", type="primary"):
         return
 
-    # --- check inputs ---
     problems = validate(values, bundle)
     if problems:
         st.error("Please fix the following before predicting:")
@@ -317,7 +276,6 @@ def main():
             st.write(f"- {problem}")
         return
 
-    # --- predict (column order must match training, so we pass feature_columns) ---
     row = pd.DataFrame([values], columns=bundle["feature_columns"])
     try:
         predicted = int(pipeline.predict(row)[0])
@@ -326,7 +284,6 @@ def main():
         st.error(f"The model could not make a prediction: `{type(error).__name__}: {error}`")
         return
 
-    # --- show the result ---
     labels = bundle.get("class_labels", {0: "Stay", 1: "Leave"})
     classes = list(pipeline.classes_)
 
@@ -346,13 +303,5 @@ def main():
         st.progress(min(max(p_leave, 0.0), 1.0), text=f"Attrition risk: {p_leave:.1%}")
         st.caption("The predicted class uses the model's standard 50% threshold.")
 
-    # --- show what influenced the prediction ---
     contributions = explain_prediction(pipeline, row)
-    if contributions is not None:
-        st.subheader("What influenced this prediction most?")
-        st.caption("Positive values push toward **Leave**, negative values toward **Stay** "
-                   "(contribution to the model's log-odds).")
-        
-
-
 main()
