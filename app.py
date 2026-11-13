@@ -344,9 +344,6 @@ def main():
         left_col.metric("Probability of leaving", f"{p_leave:.1%}")
         right_col.metric("Probability of staying", f"{p_stay:.1%}")
         st.progress(min(max(p_leave, 0.0), 1.0), text=f"Attrition risk: {p_leave:.1%}")
-
-        chart = pd.DataFrame({"Probability": [p_stay, p_leave]}, index=[labels[0], labels[1]])
-        st.bar_chart(chart)
         st.caption("The predicted class uses the model's standard 50% threshold.")
 
     # --- show what influenced the prediction ---
@@ -355,10 +352,7 @@ def main():
         st.subheader("What influenced this prediction most?")
         st.caption("Positive values push toward **Leave**, negative values toward **Stay** "
                    "(contribution to the model's log-odds).")
-        st.bar_chart(contributions.rename("Contribution"))
-
-    with st.expander("Show the exact input row sent to the model"):
-        st.dataframe(row)
+        
 
 
 main()
